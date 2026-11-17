@@ -1,0 +1,61 @@
+#!/bin/sh
+
+set -e  # Exit on any error
+
+echo "Starting misbar-ssl-agent postinst script..."
+
+# Create system user and group for misbar
+echo "Creating misbar group..."
+if ! getent group misbar >/dev/null; then
+    addgroup --system misbar || { echo "Failed to create misbar group"; exit 1; }
+fi
+
+echo "Creating misbar user..."
+if ! getent passwd misbar >/dev/null; then
+    adduser --system --group --home /var/lib/misbar --shell /bin/false misbar || { echo "Failed to create misbar user"; exit 1; }
+fi
+
+# Create required directories
+echo "Creating directories..."
+mkdir -p /var/lib/misbar || { echo "Failed to create /var/lib/misbar"; exit 1; }
+mkdir -p /var/log/misbar || { echo "Failed to create /var/log/misbar"; exit 1; }
+mkdir -p /etc/misbar || { echo "Failed to create /etc/misbar"; exit 1; }
+
+# Set proper ownership and permissions
+echo "Setting permissions..."
+chown misbar:misbar /var/lib/misbar /var/log/misbar || { echo "Failed to set ownership"; exit 1; }
+chmod 750 /var/lib/misbar /var/log/misbar || { echo "Failed to set permissions on data/log dirs"; exit 1; }
+chmod 755 /etc/misbar || { echo "Failed to set permissions on config dir"; exit 1; }
+
+# Create default config if it doesn't exist
+if [ ! -f /etc/misbar/config.yaml ]; then
+    cat > /etc/misbar/config.yaml << 'EOF'
+# Misbar Agent Configuration
+log_level: info
+data_dir: /var/lib/misbar
+log_dir: /var/log/misbar
+EOF
+    chown root:misbar /etc/misbar/config.yaml
+    chmod 640 /etc/misbar/config.yaml
+fi
+
+## This will only remove masks created by d-s-h on package removal.
+deb-systemd-helper unmask misbar.service > /dev/null || true
+
+# was-enabled defaults to true, so new installations run enable.
+if deb-systemd-helper --quiet was-enabled misbar.service
+then
+	# Enables the unit on first installation, creates new
+	# symlinks on upgrades if the unit file has changed.
+	deb-systemd-helper enable misbar.service > /dev/null || true
+	# Only start service if proper config exists (not the default one we just created)
+	if [ -f /etc/misbar/config.yaml ] && grep -q "endpoint:" /etc/misbar/config.yaml 2>/dev/null; then
+		deb-systemd-invoke start misbar.service
+	else
+		echo "Skipping service start - waiting for proper configuration"
+	fi
+else
+	# Update the statefile to add new symlinks (if any), which need to be
+	# cleaned up on purge. Also remove old symlinks.
+	deb-systemd-helper update-state misbar.service > /dev/null || true
+fi

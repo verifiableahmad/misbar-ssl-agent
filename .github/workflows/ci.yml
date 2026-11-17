@@ -1,0 +1,97 @@
+name: misbar-ssl-agent-pipeline
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install RUSTC Nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          components: rustfmt, clippy, rust-src
+      - name: Install build-essential
+        run: sudo apt install -y build-essential gh
+      - name: Install LLVM 21
+        run: wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 21
+      - name: Install GCC
+        run: sudo apt install -y libclang-21-dev libgcc-14-dev zlib1g-dev libzstd-dev
+      - name: Install libssl-dev
+        run: sudo apt install -y pkg-config libssl-dev libpolly-21-dev
+      - name: Install bpf-linker
+        run: cargo install --no-default-features --features llvm-21 bpf-linker
+      - name: Install cargo-deb
+        run: cargo install cargo-deb
+      - uses: actions/checkout@v4
+      - name: Copy .env
+        run: echo "${{ secrets.AGENT_ENVFILE }}" | tr '\n' '\n' >> .env
+      - name: Extract versions
+        id: versions
+        run: |
+          # Get version from Cargo.toml
+          CARGO_VERSION=$(grep '^version = ' misbar-ssl-agent/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "CARGO_VERSION=$CARGO_VERSION" >> $GITHUB_OUTPUT
+          
+          # Get tag version (remove 'v' prefix if present)
+          TAG_VERSION=${GITHUB_REF#refs/tags/}
+          TAG_VERSION=${TAG_VERSION#v}
+          echo "TAG_VERSION=$TAG_VERSION" >> $GITHUB_OUTPUT
+          
+          # Also get full tag name for artifacts
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
+          
+          echo "Cargo.toml version: $CARGO_VERSION"
+          echo "Tag version: $TAG_VERSION"
+      - name: Validate version consistency
+        run: |
+          if [ "${{ steps.versions.outputs.CARGO_VERSION }}" != "${{ steps.versions.outputs.TAG_VERSION }}" ]; then
+            echo "❌ Version mismatch!"
+            echo "Cargo.toml version: ${{ steps.versions.outputs.CARGO_VERSION }}"
+            echo "Tag version: ${{ steps.versions.outputs.TAG_VERSION }}"
+            exit 1
+          fi
+          echo "✅ Versions match: ${{ steps.versions.outputs.CARGO_VERSION }}"
+      - name: Build Binary
+        run: cargo build --manifest-path misbar-ssl-agent/Cargo.toml --release
+      - name: Generate Debian Package
+        run: cargo deb -p misbar-ssl-agent
+      - name: Rename Package
+        run: |
+          CARGO_VERSION="${{ steps.versions.outputs.CARGO_VERSION }}"
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          mv target/debian/misbar-ssl-agent_${CARGO_VERSION}-1_amd64.deb target/debian/misbar_${TAG_NAME}_linux_amd64.deb
+      - name: Upload Package Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: misbar-ssl-agent-package
+          path: target/debian/misbar_${{ steps.versions.outputs.TAG_NAME }}_linux_amd64.deb
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Get tag name
+        id: tag
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+      - name: Download Package Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: misbar-ssl-agent-package
+      - name: Release Binary
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: misbar_${{ steps.tag.outputs.TAG_NAME }}_linux_amd64.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.AGENT_RELEASE_TOKEN }}
+      - name: Publish to Public Repo
+        env:
+          GITHUB_TOKEN: ${{ secrets.AGENT_RELEASE_TOKEN }}
+        run: |
+          sudo apt install -y gh
+          gh release create ${{ steps.tag.outputs.TAG_NAME }} misbar_${{ steps.tag.outputs.TAG_NAME }}_linux_amd64.deb -R https://github.com/verifiableahmad/misbar-ssl-agent-releases

@@ -1,0 +1,18 @@
+[package]
+name = "misbar-ssl-agent-ebpf"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+misbar-ssl-agent-common = { path = "../misbar-ssl-agent-common" }
+
+aya-ebpf = { workspace = true }
+aya-log-ebpf = { workspace = true }
+libc.workspace = true
+
+[build-dependencies]
+which = { workspace = true }
+
+[[bin]]
+name = "misbar-ssl-agent"
+path = "src/main.rs"

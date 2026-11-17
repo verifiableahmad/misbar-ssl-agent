@@ -1,0 +1,13 @@
+Source: misbar-ssl-agent
+Section: utility
+Priority: optional
+Maintainer: Misbar <ahmad@misbar.tech>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.0
+Homepage: https://github.com/verifiableahmad/misbar-ssl-agent
+
+Package: misbar-ssl-agent
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}, systemd, adduser
+Recommends: linux-headers-generic
+Description: Misbar - API monitoring tool. This package provides the misbar-ssl-agent daemon and systemd service configuration for automated monitoring and data collection.

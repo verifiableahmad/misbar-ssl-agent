@@ -1,0 +1,61 @@
+[Unit]
+Description=Misbar Agent
+Documentation=https://github.com/verifiableahmad/misbar-ssl-agent
+After=network.target network-online.target
+Wants=network-online.target
+AssertPathExists=/usr/bin/misbar-ssl-agent
+
+[Service]
+Type=simple
+User=misbar
+Group=misbar
+WorkingDirectory=/var/lib/misbar
+ExecStart=/usr/bin/misbar-ssl-agent
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+StartLimitInterval=60
+StartLimitBurst=3
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=false
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=false
+ProtectKernelModules=false
+ProtectKernelLogs=false
+ProtectControlGroups=true
+RestrictNamespaces=false
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+PrivateMounts=false
+ProtectHostname=true
+ProtectClock=true
+
+# Required capabilities for eBPF operations
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_NET_ADMIN CAP_SYS_PTRACE CAP_DAC_OVERRIDE CAP_SETUID CAP_SETGID
+AmbientCapabilities=CAP_SYS_ADMIN CAP_NET_ADMIN CAP_SYS_PTRACE
+
+# Memory and resource limits
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=1024
+
+# File system access
+ReadWritePaths=/var/lib/misbar /var/log/misbar
+ReadOnlyPaths=/usr/lib /lib /lib64
+
+# Environment
+Environment=RUST_LOG=info
+Environment=MISBAR_CONFIG_PATH=/etc/misbar/config.yaml
+Environment=MISBAR_WAL_PATH=/var/log/misbar/wal.log
+
+# Health monitoring
+WatchdogSec=30
+
+[Install]
+WantedBy=multi-user.target
+Alias=misbar.service

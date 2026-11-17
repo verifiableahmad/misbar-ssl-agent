@@ -1,0 +1,6 @@
+#!/bin/sh
+
+# Stop the service before removal
+if [ "$1" = "remove" ] || [ "$1" = "deconfigure" ]; then
+    deb-systemd-invoke stop misbar.service || true
+fi

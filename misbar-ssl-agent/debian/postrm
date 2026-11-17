@@ -1,0 +1,44 @@
+#!/bin/sh
+
+# In case this system is running systemd, we make systemd reload the unit files
+# to pick up changes.
+if [ -d /run/systemd/system ] ; then
+	systemctl --system daemon-reload >/dev/null || true
+fi
+
+if [ "$1" = "remove" ]; then
+	if [ -x "/usr/bin/deb-systemd-helper" ]; then
+		deb-systemd-helper mask misbar.service >/dev/null || true
+	fi
+fi
+
+if [ "$1" = "purge" ]; then
+	echo "Purging misbar-ssl-agent..."
+	
+	# Remove user first (this also removes the home directory)
+	if getent passwd misbar >/dev/null; then
+		echo "Removing misbar user..."
+		deluser --system --remove-home misbar || echo "Failed to remove misbar user"
+	else
+		echo "misbar user does not exist"
+	fi
+	
+	# Remove group
+	if getent group misbar >/dev/null; then
+		echo "Removing misbar group..."
+		delgroup --system misbar || echo "Failed to remove misbar group"
+	else
+		echo "misbar group does not exist"
+	fi
+	
+	# Clean up any remaining directories and files
+	rm -rf /etc/misbar
+	rm -rf /var/lib/misbar
+	rm -rf /var/log/misbar
+	
+	# Clean up any leftover systemd state
+	if [ -x "/usr/bin/deb-systemd-helper" ]; then
+		deb-systemd-helper purge misbar.service >/dev/null || true
+		deb-systemd-helper unmask misbar.service >/dev/null || true
+	fi
+fi
